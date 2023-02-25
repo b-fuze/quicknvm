@@ -1,0 +1,142 @@
+# This is a bad psuedo-code partially implementing NVM
+# developed by reading NVM's shell script codebase to
+# figure out exactly how it worked.
+#
+# if I want to implement checking for versions remotely:
+#   Node.js versions mirror: https://nodejs.org/dist/index.tab
+
+- action: main
+  steps:
+    - set "node_version" to the output of `get_version`
+    - set "nvmrc_path" to the location of `.nvmrc` by searching
+      $PWD and all of its parent directories. If not found, set
+      "nvm_version" to an empty string
+    - if '$nvmrc_path' is not empty:
+      - set "nvmrc_node_version" to resolved version from `.nvmrc` file
+        located at '$nvmrc_path' by calling
+        `get_version `check_local_alias $nvmrc_file_contents`` if it
+        doesn't return any errors (otherwise report them and exit)
+      - if '$nvmrc_node_version' doesn't exist, call `nvm install`
+      - if '$node_version' is not '$nvmrc_node_version'
+        - call `set_version '$nvmrc_node_version'`
+    - otherwise if '$nvmrc_path' is empty:
+      - if '$node_version' is not equal to the contents of
+        '$NVM_DIR/alias/default'
+        - call `set_version 'default'`
+
+- action: get_version (nvm_version)
+  args: $version (string, optional)
+  description: |
+    This function resolves to an installed version on the
+    system. It accepts values like 'lts/-N' (relative LTS),
+    'lts/CODENAME', 'lts/*', 'default', 'stable' (AKA 'node'),
+    'unstable', 'system' (will not return the system's Node.js
+    version, just 'system' as a version number to indicate that
+    it isn't managed by NVM) and actual version numbers (with
+    optional MINOR and PATCH) (!!!RENAMED TO find_version!!! and version isn't optional)
+  steps:
+    - set "version" to 'current' version if no version specified
+    - if '$version' is 'current' return the output of
+      `find_current_version`
+    - if '$version' is a full version number
+      - set "version_dir" to '$NVM_DIR/versions/node/$version'
+      - if '$version' < '0.12.0'
+        - set "version_dir" to '$NVM_DIR/$version'
+      - if '$version_dir/bin/node' is an executable file
+        - return '$version'
+      - otherwise
+        - return the error 'version not installed'
+    - set '$version' to a value removing any excess trailing
+      periods to do prefix matching when searching the dirs
+    # Might need to account for system (outside of NVM) node
+    # existing (considering nvm_ls' NVM_ADD_SYSTEM variable)
+    - search the dirs '$NVM_DIR' and '$NVM_DIR/versions/node' for
+      a dir that starts with 'v$version'
+      - if found results return the highest version (!!SORTING!!)
+      - otherwise return the error 'no version found'
+
+- action: find_current_version (nvm_ls_current)
+  steps:
+    - set "node_path" to 'none' if `node` isn't found in `$PATH`
+      - return '$node_path'
+    - if `node` is found anywhere in an NVM tree, set "node_path"
+      to its location
+      - set "version" to the output of `node --version`
+        (remap 'v0.6.21-pre' to 'v0.6.21') (!!!TODO!!!)
+    - otherwise set "node_path" to 'system'
+
+- action: set_version (nvm use)
+  args: $version (string, optional)
+  steps:
+    - set "resolved_version" to the output of `get_version $version`
+    - if '$version' is empty try to set "version" to the resolved (via
+      `get_version`) value of an `.npmrc` file if one is found
+    - if '$version' is not installed return the error 'version
+      $version not installed'
+    - set "PATH" to include a path to the new Node.js location
+      (replacing any prior path components pointing to an NVM
+      installation)
+    - set "MANPATH" to include a path to the new Node.js location
+      (replacing any prior path components pointing to an NVM
+      installation) (!!!TODO!!!)
+    - set "NVM_BIN" and "NVM_INC" to '.../bin' and './include/node'
+    - print 'Now using node $version (npm v$get_npm_version)'
+    - (EXTERNAL) call `hash -r`
+
+- action: check_local_alias (nvm_resolve_local_alias)
+  args: $version (string)
+  description: |
+    This function resolves any aliases like `lts/*`, `stable`,
+    etc, to actual version numbers
+  steps:
+    - if '$version' matches 'lts/.+'
+      - set "version" to the output of `normalize_lts`
+        - return error if `normalize_lts` errors
+    - if '$version' matches one of 'node' or 'stable' or
+      'unstable'
+      # A minor version is "MAJOR.MINOR" without PATCH
+      - set "minor_nodejs_versions" to `nvm_ls node` (EXPAND)
+      - for each $minor_version in $minor_nodejs_versions
+        - if major_of($minor_version) >= 10
+          - set "stable" to '$minor_version'
+        - otherwise
+          - if minor_of($minor_version) is even
+            - set "stable" to '$minor_version'
+          - otherwise 
+            - set "unstable" to '$minor_version'
+      - if '$version' is 'stable' or 'node'
+        - set "version" to '$stable'
+      - if '$version' is 'unstable'
+        - set "version" to '$unstable' if it's set
+          otherwise return the error 'no unstable version
+          found'
+    # - (handle infinite loop on line 1126)
+    - return '$version'
+
+- action: normalize_lts (nvm_normalize_lts)
+  args: $lts_version (string)
+  description: |
+    NVM supports relative LTS versions, so you can
+    reference a relative version with `lts/-N` with
+    N being any positive integer over 0
+
+    It returns an actual version, either resolved
+    from a relative LTS or a normal LTS or the
+    version string itself
+  steps:
+    - set "lts_alias_dir" to '$NVM_DIR/alias/lts'
+    - set "normalize_lts" to '$lts_version'
+    - set "relative_lts_num" to first capture group of
+      the regex `^lts/-([1-9][0-9])*$` matching
+      '$lts_version'
+      - if `ls $lts_alias_dir` $relative_lts_num'th to last
+        entry exists, set "normalize_lts" to
+        'lts/$entry_file_contents'
+      - otherwise if no such entry exists return the error
+        'that many LTS releases dont exist yet'
+    - set "alias_path" to '$NVM_DIR/alias/$normalized_lts'
+      - if the $alias_path dir does not exist return
+        the error 'alias does not exist'
+    - return contents of file at '$alias_path'
+
+# vim:set foldmethod=indent:
