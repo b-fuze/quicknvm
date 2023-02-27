@@ -13,8 +13,16 @@ compatible but fast.
 This only implements automatic Node version detection and
 installation, it doesn't support commands of any sort.
 
-## Usage
+## Install
+[Get the Rust compiler](https://www.rust-lang.org/tools/install) if you
+don't have it already and run
+```sh
+cargo build --release
+```
+Then copy the newly compiled binary at `target/release/quicknvm` to
+somewhere in your `PATH`
 
+## Usage
 Add this to your .zshrc
 ```sh
 autoload -U add-zsh-hook
