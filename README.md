@@ -10,8 +10,8 @@ NVM-compatible way.
 I use NVM, but it's kinda slow and wanted something fully
 compatible but fast.
 
-This only implements automatic Node version detection, it
-doesn't support commands of any sort.
+This only implements automatic Node version detection and
+installation, it doesn't support commands of any sort.
 
 ## Usage
 
