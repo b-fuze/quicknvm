@@ -1,9 +1,10 @@
 # Quicknvm
 [NVM](https://github.com/nvm-sh/nvm) auto-detection, but quick
 
-This implements auto-detecting the correct NVM version
-based on `.nvmrc` files, and does it in a way compatible
-with NVM.
+This implements auto-detecting (**and** auto-installing) the correct
+NVM version based on `.nvmrc` files, and does it in a way compatible
+with NVM. It also properly detects IO.js installations in an
+NVM-compatible way.
 
 ## Motivation
 I use NVM, but it's kinda slow and wanted something fully

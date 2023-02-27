@@ -4,6 +4,8 @@
 #
 # if I want to implement checking for versions remotely:
 #   Node.js versions mirror: https://nodejs.org/dist/index.tab
+#
+# Node begins at version 4, previous versions v1+ are IO.js
 
 - action: main
   steps:

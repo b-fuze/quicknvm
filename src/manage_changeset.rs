@@ -1,9 +1,8 @@
-use crate::version::{Version, find_version};
+use crate::version::Version;
 use crate::env_utils::{EnvChangeset, get_new_env, strip_nvm_path};
 use crate::misc::PATH;
 
 pub async fn set_node_version(version: &Version) -> Vec<EnvChangeset> {
-    let version = find_version(version).await.unwrap();
     let location = version.location.as_ref().unwrap().to_str().unwrap();
     let changesets = vec![
         EnvChangeset::UpdateVar {

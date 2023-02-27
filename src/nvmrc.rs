@@ -6,9 +6,10 @@ use tokio_stream::wrappers::ReadDirStream;
 use tokio_stream::StreamExt;
 use async_recursion::async_recursion;
 use crate::misc::list_all_nvm_versions;
+use crate::version::NodeVersion;
 
-use super::version::Version;
-use super::misc::HOME;
+use crate::version::Version;
+use crate::misc::HOME;
 
 // TODO: enforce this for all file reads
 const MAX_NVMRC_FILE_SIZE: u64 = 32;
@@ -65,7 +66,7 @@ const LTS_STR_START: &str = "lts/";
 const MAX_RECURSIVE_DEREF: u32 = 5;
 
 #[async_recursion(?Send)]
-pub async fn resolve_nvmrc_version(contents: &str, recursion_depth: u32) -> Result<Version> {
+pub async fn resolve_nvmrc_version(contents: &str, recursion_depth: u32) -> Result<NodeVersion> {
     if recursion_depth > MAX_RECURSIVE_DEREF {
         return Err(anyhow!("max nvmrc recursive lookup reached"));
     }
@@ -97,7 +98,7 @@ pub async fn resolve_nvmrc_version(contents: &str, recursion_depth: u32) -> Resu
                 nvm_lts_aliases.sort_by(|a, b| a.partial_cmp(b).unwrap().reverse());
                 return nvm_lts_aliases
                     .get(offset)
-                    .map(|version| Ok(version.clone()))
+                    .map(|version| Ok(NodeVersion::NvmVersion(version.clone())))
                     .unwrap_or(Err(anyhow!("relative LTS version not found")));
             },
             // Normal LTS alias
@@ -116,17 +117,21 @@ pub async fn resolve_nvmrc_version(contents: &str, recursion_depth: u32) -> Resu
             versions.sort_by(|a, b| a.partial_cmp(b).unwrap());
             versions
                 .pop()
-                .map(|version| Ok(version))
+                .map(|version| Ok(NodeVersion::NvmVersion(version)))
                 .unwrap_or(Err(anyhow!("no versions found")))
         },
         "default" => {
             let path = format!("{}/.nvm/alias/default", home);
             return resolve_nvmrc_version(fs::read_to_string(path).await?.as_str(), recursion_depth + 1).await;
         },
+        "system" => {
+            return Ok(NodeVersion::System);
+        },
         _ => {
             // Try to parse a Version struct
             trimmed_contents
                 .parse()
+                .map(|version| NodeVersion::NvmVersion(version))
                 .context("invalid nvmrc version")
         }
     }

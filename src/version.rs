@@ -1,10 +1,15 @@
-use std::{str::{FromStr, Chars}, error::Error, fmt::{Debug, Display}, path::PathBuf};
+use std::str::{FromStr, Chars};
+use std::error::Error;
+use std::fmt::{Debug, Display};
+use std::path::PathBuf;
 use anyhow::{Result, anyhow};
 use tokio::{join, fs};
 use crate::misc::{
     list_all_nvm_versions,
     NVM_VERSION_DIR_OLD,
     NVM_VERSION_DIR_NEW,
+    NVM_VERSION_DIR_OLD_IOJS,
+    NVM_VERSION_DIR_NEW_IOJS,
     DOT_NVM_HOME,
     HOME,
 };
@@ -19,32 +24,25 @@ pub struct Version {
     pub location: Option<PathBuf>,
 }
 
+pub enum NodeVersion {
+    NvmVersion(Version),
+    System,
+}
+
 impl Version {
     pub fn is_full(&self) -> bool {
         self.minor.is_some() && self.patch.is_some()
     }
 
-    pub fn len(&self) -> usize {
-        let has_minor = if self.minor.is_some() { 1 } else { 0 };
-        let has_patch = if self.patch.is_some() { 1 } else { 0 };
-        1 + has_minor + has_patch
-    }
-
     pub fn matches(&self, other: &Self) -> bool {
-        let (larger_version, smaller_version) = if other.len() > self.len() {
-            (other, self)
-        } else {
-            (self, other)
-        };
-
-        if larger_version.major != smaller_version.major {
+        if self.major != other.major {
             false
-        } else if larger_version.minor.is_none() || smaller_version.minor.is_none() {
+        } else if self.minor.is_none() || other.minor.is_none() {
             true
-        } else if larger_version.minor.as_ref().unwrap() == smaller_version.minor.as_ref().unwrap() {
-            if larger_version.patch.is_none() || smaller_version.patch.is_none() {
+        } else if self.minor.as_ref().unwrap() == other.minor.as_ref().unwrap() {
+            if self.patch.is_none() || other.patch.is_none() {
                 true
-            } else if larger_version.patch.as_ref().unwrap() == smaller_version.patch.as_ref().unwrap() {
+            } else if self.patch.as_ref().unwrap() == other.patch.as_ref().unwrap() {
                 true
             } else {
                 false
@@ -55,8 +53,19 @@ impl Version {
     }
 }
 
-impl ToString for Version {
-    fn to_string(&self) -> String {
+impl Default for Version {
+    fn default() -> Self {
+        Version {
+            major: 0,
+            minor: None,
+            patch: None,
+            location: None
+        }
+    }
+}
+
+impl Display for Version {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut output = self.major.to_string();
 
         if let Some(minor) = self.minor {
@@ -69,7 +78,7 @@ impl ToString for Version {
             }
         }
 
-        format!("v{}", output)
+        write!(f, "v{}", output)
     }
 }
 
@@ -127,14 +136,12 @@ impl FromStr for Version {
             .unwrap_or(parse_error)?;
         let minor: Option<u32> = get_number_digits(&mut chr_iter)
             .map(|string| string.parse()
-                .map(|num| Some(num))
                 .map_err(|_| ParseVersionError))
-            .unwrap_or(Ok(None))?;
+            .transpose()?;
         let patch: Option<u32> = get_number_digits(&mut chr_iter)
             .map(|string| string.parse()
-                .map(|num| Some(num))
                 .map_err(|_| ParseVersionError))
-            .unwrap_or(Ok(None))?;
+            .transpose()?;
 
         Ok(Version {
             major,
@@ -145,38 +152,48 @@ impl FromStr for Version {
     }
 }
 
-/// Checks if a version exists
+/// Checks if an NVM-managed Node version is installed
 pub async fn find_version(version: &Version) -> Result<Version> {
     if version.is_full() {
         let version_string = version.to_string();
         let mut owned_version = version.clone();
-        let old_version_dir_path = format!("{}/{}/{}", HOME.as_str(), NVM_VERSION_DIR_OLD, version_string);
-        let new_version_dir_path = format!("{}/{}/{}", HOME.as_str(), NVM_VERSION_DIR_NEW, version_string);
-        let (old_version_dir, new_version_dir) = join!(
-            fs::metadata(&old_version_dir_path),
-            fs::metadata(&new_version_dir_path),
+
+        // TODO: See if there's a nice way to deduplicate all of this
+        let paths = [
+            format!("{}/{}/{}", HOME.as_str(), NVM_VERSION_DIR_OLD, version_string),
+            format!("{}/{}/{}", HOME.as_str(), NVM_VERSION_DIR_NEW, version_string),
+            format!("{}/{}/{}", HOME.as_str(), NVM_VERSION_DIR_OLD_IOJS, version_string),
+            format!("{}/{}/{}", HOME.as_str(), NVM_VERSION_DIR_NEW_IOJS, version_string),
+        ];
+        // Search all possible locations concurrently
+        let possible_version_paths = join!(
+            fs::metadata(&paths[0]),
+            fs::metadata(&paths[1]),
+            fs::metadata(&paths[2]),
+            fs::metadata(&paths[3]),
         );
+        let possible_version_paths = [
+            possible_version_paths.0,
+            possible_version_paths.1,
+            possible_version_paths.2,
+            possible_version_paths.3,
+        ];
 
-        if let Ok(dir) = old_version_dir {
-            if dir.is_dir() {
-                let _ = owned_version.location.insert(PathBuf::from(old_version_dir_path));
-                return Ok(owned_version);
+        for (index, version) in possible_version_paths.iter().enumerate() {
+            if let Ok(dir) = version {
+                if dir.is_dir() {
+                    let _ = owned_version.location.insert(PathBuf::from(&paths[index]));
+                    return Ok(owned_version);
+                }
             }
         }
 
-        if let Ok(dir) = new_version_dir {
-            if dir.is_dir() {
-                let _ = owned_version.location.insert(PathBuf::from(new_version_dir_path));
-                return Ok(owned_version);
-            }
-        }
-
-        Err(anyhow!("couldn't find version {}", version.to_string()))
+        Err(anyhow!("couldn't find version {}", version))
     } else {
         let mut versions = list_all_nvm_versions().await?;
         versions.retain(|version_entry| version.matches(version_entry));
         versions.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        versions.pop().ok_or(anyhow!("couldn't find version {}", version.to_string()))
+        versions.pop().ok_or(anyhow!("couldn't find version {}", version))
     }
 }
 
