@@ -43,7 +43,7 @@ Quicknvm should support most NVM `.nvmrc` supported values
 | --- | --- | --- | --- |
 | `lts/codename` | LTS by codename | `lts/argon` | uses argon LTS |
 | `lts/*` | latest LTS | `lts/*` | uses latest installed LTS (`hydrogen` at time of writing) |
-| `lts/-N` | relative LTS | `lts/-3` | uses 3 LTS versions behind |
+| `lts/-N` | relative LTS | `lts/-3` | uses 3 LTS versions behind latest |
 | `default` | default version | `default` | uses the default NVM version, [see below](#setting-the-default) |
 | `system` | system-installed version | `system` | uses the system non-NVM managed version of Node.js if any |
 | `stable` | latest stable version | `stable` | uses the latest stable installed version |
