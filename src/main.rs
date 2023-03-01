@@ -176,7 +176,11 @@ async fn main() {
                         Ok(version) => version
                     };
 
-                    eprintln!("Now using {} {}", get_runtime_name(&installed_version), installed_version);
+                    let npm_version = npm_version(Some(&installed_version))
+                        .await
+                        .map(|version| format!(" (npm {})", version))
+                        .unwrap_or_else(|_| String::new());
+                    eprintln!("Now using {} {}{}", get_runtime_name(&installed_version), installed_version, npm_version);
                     Some(set_node_version(&installed_version).await)
                 }
             },
@@ -187,7 +191,7 @@ async fn main() {
                     let version_message = if let Some(ref version) = system_version {
                         format!("Now using system version of Node: {}", version)
                     } else {
-                        "Version 'system' not found - try `nvm ls-remote` to browse available versions.".to_string()
+                        "System version of node not found.".to_string()
                     };
 
                     eprintln!("Reverting to nvm default version");
