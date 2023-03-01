@@ -37,7 +37,7 @@ add-zsh-hook chpwd load-quicknvm
 load-quicknvm
 ```
 ## Supported `.nvmrc` values
-Quicknvm should support most NVM `.npmrc` supported values
+Quicknvm should support most NVM `.nvmrc` supported values
 
 | Syntax | Description | Example | Example outcome |
 | --- | --- | --- | --- |
