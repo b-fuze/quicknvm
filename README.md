@@ -54,5 +54,15 @@ Quicknvm should support most NVM `.nvmrc` supported values
 The only noteworthy value is probably `unstable` which is only
 for Node.js pre-v1.
 
+## Setting the default
+You can set the default NVM version by running
+
+```
+nvm alias default VERSION_STRING
+```
+
+where `VERSION_STRING` can be any of the values in the table above except for
+`default`
+
 ## License
 MIT
