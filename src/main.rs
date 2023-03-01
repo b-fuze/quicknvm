@@ -111,7 +111,7 @@ async fn main() {
                             .unwrap_or_else(|_| String::new());
                         format!("Now using system version of Node: {}{}", version, npm_version)
                     } else {
-                        "Version 'system' not found - try `nvm ls-remote` to browse available versions.".to_string()
+                        "System version of node not found.".to_string()
                     };
 
                     eprintln!("{}", version_message);
