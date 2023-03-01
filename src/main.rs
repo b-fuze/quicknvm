@@ -8,7 +8,7 @@ mod install_node;
 
 use std::env::current_dir;
 use install_node::install_node;
-use query_current::system_node_version;
+use query_current::{npm_version, system_node_version};
 use tokio::fs;
 use manage_changeset::{set_node_version, revert_to_system_version};
 use env_utils::gen_shell_script;
@@ -28,28 +28,54 @@ async fn main() {
         let nvmrc_version = nvmrc::resolve_nvmrc_version(
             nvmrc_contents.as_str(),
             0
-        ).await.expect("couldn't resolve nvmrc version");
+        ).await;
+
+        let nvmrc_version = if let Ok(version) = nvmrc_version {
+            version
+        } else {
+            eprintln!("Invalid .nvmrc '{}'", nvmrc_path.to_str().unwrap());
+            return;
+        };
 
         match nvmrc_version {
             NodeVersion::NvmVersion(version) => {
                 let has_same_node_version = current_node_version
                     .map_or(false, |current| {
-                        version.matches(&current)
+                        version
+                            .as_ref()
+                            .map(|version| version.matches(&current))
+                            .unwrap_or(false)
                     });
 
                 if has_same_node_version {
                     None
                 } else {
+                    let nvmrc_contents = nvmrc_contents.trim();
                     eprintln!(
                         "Found '{}' with version <{}>",
                         nvmrc_path.to_str().unwrap(),
-                        nvmrc_contents.trim()
+                        nvmrc_contents
                     );
+                    let version = match version {
+                        Some(version) => version,
+                        None => {
+                            // We got an implicit version like `node`/`iojs`,
+                            // install them first...
+                            match install_node(nvmrc_contents).await {
+                                Ok(version) => version,
+                                _ => {
+                                    eprintln!("Failed to install {}", nvmrc_contents.trim());
+                                    return;
+                                }
+                            }
+                        },
+                    };
+
                     let installed_version = match find_version(&version).await {
                         Err(_) => {
                             // Node version isn't installed... Try installing it
                             // TODO: add some way to check if a version exists before installing it
-                            let new_installed_version = install_node(&version).await;
+                            let new_installed_version = install_node(nvmrc_contents).await;
                             if let Ok(version) = new_installed_version {
                                 version
                             } else {
@@ -60,7 +86,11 @@ async fn main() {
                         Ok(version) => version
                     };
 
-                    eprintln!("Now using {} {}", get_runtime_name(&installed_version), installed_version);
+                    let npm_version = npm_version(Some(&installed_version))
+                        .await
+                        .map(|version| format!(" (npm {})", version))
+                        .unwrap_or_else(|_| String::new());
+                    eprintln!("Now using {} {}{}", get_runtime_name(&installed_version), installed_version, npm_version);
                     Some(set_node_version(&installed_version).await)
                 }
             },
@@ -75,7 +105,11 @@ async fn main() {
                         nvmrc_contents.trim()
                     );
                     let version_message = if let Some(ref version) = system_version {
-                        format!("Now using system version of Node: {}", version)
+                        let npm_version = npm_version(None)
+                            .await
+                            .map(|version| format!(" (npm {})", version))
+                            .unwrap_or_else(|_| String::new());
+                        format!("Now using system version of Node: {}{}", version, npm_version)
                     } else {
                         "Version 'system' not found - try `nvm ls-remote` to browse available versions.".to_string()
                     };
@@ -103,18 +137,35 @@ async fn main() {
             NodeVersion::NvmVersion(version) => {
                 let has_same_node_version = current_node_version
                     .map_or(false, |current| {
-                        version.matches(&current)
+                        version
+                            .as_ref()
+                            .map(|version| version.matches(&current))
+                            .unwrap_or(false)
                     });
 
                 if has_same_node_version {
                     None
                 } else {
                     eprintln!("Reverting to nvm default version");
+                    let version = match version {
+                        Some(version) => version,
+                        None => {
+                            // We got an implicit version like `node`/`iojs`,
+                            // install it first...
+                            match install_node("default").await {
+                                Ok(version) => version,
+                                _ => {
+                                    eprintln!("Failed to install default");
+                                    return;
+                                }
+                            }
+                        },
+                    };
                     let installed_version = match find_version(&version).await {
                         Err(_) => {
                             // Node version isn't installed... Try installing it
                             // TODO: add some way to check if a version exists before installing it
-                            let new_installed_version = install_node(&version).await;
+                            let new_installed_version = install_node(version.to_string().as_str()).await;
                             if let Ok(version) = new_installed_version {
                                 version
                             } else {

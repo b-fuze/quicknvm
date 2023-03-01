@@ -6,6 +6,7 @@ use anyhow::{Result, anyhow};
 use tokio::{join, fs};
 use crate::misc::{
     list_all_nvm_versions,
+    ListingType,
     NVM_VERSION_DIR_OLD,
     NVM_VERSION_DIR_NEW,
     NVM_VERSION_DIR_OLD_IOJS,
@@ -25,7 +26,9 @@ pub struct Version {
 }
 
 pub enum NodeVersion {
-    NvmVersion(Version),
+    /// This is set to None when the provided nvmrc string
+    /// is valid but a matching installation isn't found
+    NvmVersion(Option<Version>),
     System,
 }
 
@@ -190,7 +193,7 @@ pub async fn find_version(version: &Version) -> Result<Version> {
 
         Err(anyhow!("couldn't find version {}", version))
     } else {
-        let mut versions = list_all_nvm_versions().await?;
+        let mut versions = list_all_nvm_versions(ListingType::Both).await?;
         versions.retain(|version_entry| version.matches(version_entry));
         versions.sort_by(|a, b| a.partial_cmp(b).unwrap());
         versions.pop().ok_or(anyhow!("couldn't find version {}", version))

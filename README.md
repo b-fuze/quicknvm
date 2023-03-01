@@ -23,7 +23,7 @@ Then copy the newly compiled binary at `target/release/quicknvm` to
 somewhere in your `PATH`
 
 ## Usage
-Add this to your .zshrc
+Add this to your `.zshrc`
 ```sh
 autoload -U add-zsh-hook
 load-quicknvm() {
@@ -36,6 +36,23 @@ load-quicknvm() {
 add-zsh-hook chpwd load-quicknvm
 load-quicknvm
 ```
+## Supported `.nvmrc` values
+Quicknvm should support most NVM `.npmrc` supported values
+
+| Syntax | Description | Example | Example outcome |
+| --- | --- | --- | --- |
+| `lts/codename` | LTS by codename | `lts/argon` | uses argon LTS |
+| `lts/*` | latest LTS | `lts/*` | uses latest installed LTS (`hydrogen` at time of writing) |
+| `lts/-N` | relative LTS | `lts/-3` | uses 3 LTS versions behind |
+| `default` | default version | `default` | uses the default NVM version, [see below](#setting-the-default) |
+| `system` | system-installed version | `system` | uses the system non-NVM managed version of Node.js if any |
+| `stable` | latest stable version | `stable` | uses the latest stable installed version |
+| `node` | latest stable version | `node` | uses the latest stable installed version |
+| `iojs` | latest stable IO.js version | `iojs` | uses the latest stable installed IO.js version |
+
+## Unsupported `.nvmrc` values
+The only noteworthy value is probably `unstable` which is only
+for Node.js pre-v1.
 
 ## License
 MIT

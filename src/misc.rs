@@ -1,7 +1,7 @@
 use std::env::var as get_env_var;
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use lazy_static::lazy_static;
-use tokio::{join, fs};
+use tokio::fs;
 use tokio_stream::wrappers::ReadDirStream;
 use tokio_stream::StreamExt;
 use futures_util::future::join_all;
@@ -37,26 +37,35 @@ pub fn get_runtime_name(version: &Version) -> &str {
     if is_iojs(version) { "io.js" } else { "node" }
 }
 
-/// This function is gnarly... It could use some serious refactoring
-pub async fn list_all_nvm_versions() -> Result<Vec<Version>> {
-    let (
-        nvm_dir_old,
-        nvm_dir_new,
-        nvm_dir_old_iojs,
-        nvm_dir_new_iojs,
-    ) = join!(
-        fs::read_dir(format!("{}/{}", HOME.as_str(), NVM_VERSION_DIR_OLD)),
-        fs::read_dir(format!("{}/{}", HOME.as_str(), NVM_VERSION_DIR_NEW)),
-        fs::read_dir(format!("{}/{}", HOME.as_str(), NVM_VERSION_DIR_OLD_IOJS)),
-        fs::read_dir(format!("{}/{}", HOME.as_str(), NVM_VERSION_DIR_NEW_IOJS)),
-    );
+// TODO: check if the Node variant is needed
+#[allow(dead_code)]
+pub enum ListingType {
+    Node,
+    Iojs,
+    Both,
+}
 
-    let streams = [
-        nvm_dir_old,
-        nvm_dir_new,
-        nvm_dir_old_iojs,
-        nvm_dir_new_iojs,
-    ]
+/// This function is gnarly... It could use some serious refactoring
+pub async fn list_all_nvm_versions(listing_type: ListingType) -> Result<Vec<Version>> {
+    let nvm_dirs: Vec<&'static str> = match listing_type {
+        ListingType::Node => vec![NVM_VERSION_DIR_OLD, NVM_VERSION_DIR_NEW],
+        ListingType::Iojs => vec![NVM_VERSION_DIR_NEW_IOJS, NVM_VERSION_DIR_OLD_IOJS],
+        ListingType::Both => vec![
+            NVM_VERSION_DIR_OLD,
+            NVM_VERSION_DIR_NEW,
+            NVM_VERSION_DIR_NEW_IOJS,
+            NVM_VERSION_DIR_OLD_IOJS,
+        ],
+    };
+    let read_dirs = join_all(
+        nvm_dirs
+            .into_iter()
+            .map(|dir| async move {
+                fs::read_dir(format!("{}/{}", HOME.as_str(), dir)).await
+            })
+    ).await;
+
+    let streams = read_dirs
         .into_iter()
         .filter_map(|listing| listing
             .map(|read_dir| ReadDirStream::new(read_dir))
@@ -64,7 +73,7 @@ pub async fn list_all_nvm_versions() -> Result<Vec<Version>> {
         .collect::<Vec<_>>();
 
     if streams.len() == 0 {
-        return Err(anyhow!("no NVM directories could be read. Possibly invalid NVM install or permission issue"))
+        return Ok(vec![])
     }
 
     let version_entries = streams

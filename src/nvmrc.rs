@@ -5,7 +5,7 @@ use anyhow::{Context, Result, anyhow};
 use tokio_stream::wrappers::ReadDirStream;
 use tokio_stream::StreamExt;
 use async_recursion::async_recursion;
-use crate::misc::list_all_nvm_versions;
+use crate::misc::{list_all_nvm_versions, ListingType, is_iojs, NVM_VERSION_DIR_NEW_IOJS, NVM_VERSION_DIR_NEW};
 use crate::version::NodeVersion;
 
 use crate::version::Version;
@@ -98,7 +98,7 @@ pub async fn resolve_nvmrc_version(contents: &str, recursion_depth: u32) -> Resu
                 nvm_lts_aliases.sort_by(|a, b| a.partial_cmp(b).unwrap().reverse());
                 return nvm_lts_aliases
                     .get(offset)
-                    .map(|version| Ok(NodeVersion::NvmVersion(version.clone())))
+                    .map(|version| Ok(NodeVersion::NvmVersion(Some(version.clone()))))
                     .unwrap_or(Err(anyhow!("relative LTS version not found")));
             },
             // Normal LTS alias
@@ -112,13 +112,22 @@ pub async fn resolve_nvmrc_version(contents: &str, recursion_depth: u32) -> Resu
 
     match trimmed_contents {
         "node" | "stable" => {
-            // Just sort the existing versions and find the latest
-            let mut versions = list_all_nvm_versions().await?;
+            // Just sort the existing Node.js versions and find the latest
+            let mut versions = list_all_nvm_versions(ListingType::Both).await?;
             versions.sort_by(|a, b| a.partial_cmp(b).unwrap());
             versions
                 .pop()
-                .map(|version| Ok(NodeVersion::NvmVersion(version)))
-                .unwrap_or(Err(anyhow!("no versions found")))
+                .map(|version| Ok(NodeVersion::NvmVersion(Some(version))))
+                .unwrap_or(Ok(NodeVersion::NvmVersion(None))) // No Node.js versions found
+        },
+        "iojs" => {
+            // Just sort the existing IO.js versions and find the latest
+            let mut versions = list_all_nvm_versions(ListingType::Iojs).await?;
+            versions.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            versions
+                .pop()
+                .map(|version| Ok(NodeVersion::NvmVersion(Some(version))))
+                .unwrap_or(Ok(NodeVersion::NvmVersion(None))) // No IO.js versions found
         },
         "default" => {
             let path = format!("{}/.nvm/alias/default", home);
@@ -131,8 +140,20 @@ pub async fn resolve_nvmrc_version(contents: &str, recursion_depth: u32) -> Resu
             // Try to parse a Version struct
             trimmed_contents
                 .parse()
-                .map(|version| NodeVersion::NvmVersion(version))
+                .map(|mut version| {
+                    let location = format!("{}/{}/{}", HOME.as_str(), get_runtime_install_dir(&version), version.to_string());
+                    version.location = Some(PathBuf::from(location));
+                    NodeVersion::NvmVersion(Some(version))
+                })
                 .context("invalid nvmrc version")
         }
+    }
+}
+
+fn get_runtime_install_dir(version: &Version) -> &'static str {
+    if is_iojs(version) {
+        NVM_VERSION_DIR_NEW_IOJS
+    } else {
+        NVM_VERSION_DIR_NEW
     }
 }
